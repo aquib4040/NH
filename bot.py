@@ -3,19 +3,51 @@ import asyncio
 import os
 from bs4 import BeautifulSoup
 from PIL import Image
+from aiohttp import web
 
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import (
     InlineQuery, InlineQueryResultArticle,
     InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton,
-    CallbackQuery
+    CallbackQuery, Message
 )
 
-from config import APP_ID, API_HASH, TG_BOT_TOKEN, START_MSG, START_PIC, OWNER_ID, LOGGER
-from database import db  # Import your MongoDB handler
+from config import APP_ID, API_HASH, TG_BOT_TOKEN, OWNER_ID, LOGGER
+from database import db
 
 app = Client("inline_bot", api_id=APP_ID, api_hash=API_HASH, bot_token=TG_BOT_TOKEN)
 
+routes = web.RouteTableDef()
+
+@routes.get("/", allow_head=True)
+async def root_handler(request):
+    return web.Response(text="✅ Bot is alive!")
+
+async def web_server():
+    web_app = web.Application(client_max_size=100000000)
+    web_app.add_routes(routes)
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
+    await site.start()
+
+@app.on_message(filters.command("start") & filters.private)
+async def start_command(client: Client, message: Message):
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("🔎 Search Manga", switch_inline_query_current_chat="")],
+        [InlineKeyboardButton("💻 Contact Developer", url="https://t.me/ExE_AQUIB")]
+    ])
+    await message.reply_photo(
+        photo=os.getenv("START_PIC"),
+        caption=os.getenv("START_MESSAGE").format(
+            first=message.from_user.first_name,
+            last=message.from_user.last_name,
+            username=f"@{message.from_user.username}" if message.from_user.username else None,
+            mention=message.from_user.mention,
+            id=message.from_user.id
+        ),
+        reply_markup=keyboard
+    )
 
 async def search_nhentai(query=None, page=1):
     results = []
@@ -50,7 +82,6 @@ async def search_nhentai(query=None, page=1):
 
     print(f"[DEBUG] Found {len(results)} results for query '{query}'")
     return results
-
 
 @app.on_inline_query()
 async def inline_search(client: Client, inline_query: InlineQuery):
@@ -100,7 +131,6 @@ async def inline_search(client: Client, inline_query: InlineQuery):
         print("[INLINE ERROR]", e)
         await inline_query.answer([], switch_pm_text="⚠️ Search failed", switch_pm_parameter="start")
 
-
 async def download_page(session, url, filename):
     headers = {"User-Agent": "Mozilla/5.0"}
     async with session.get(url, headers=headers) as resp:
@@ -108,7 +138,6 @@ async def download_page(session, url, filename):
             raise Exception(f"Failed to download: {url}")
         with open(filename, "wb") as f:
             f.write(await resp.read())
-
 
 async def download_manga_as_pdf(code, progress_callback=None):
     api_url = f"https://nhentai.net/api/gallery/{code}"
@@ -146,7 +175,6 @@ async def download_manga_as_pdf(code, progress_callback=None):
         os.remove(img)
     os.rmdir(folder)
     return pdf_path
-
 
 @app.on_callback_query(filters.regex(r"^download_(\d+)$"))
 async def handle_download(client: Client, callback: CallbackQuery):
@@ -195,6 +223,14 @@ async def handle_download(client: Client, callback: CallbackQuery):
         if pdf_path and os.path.exists(pdf_path):
             os.remove(pdf_path)
 
+async def main():
+    await web_server()
+    print("Bot started!")
+    await app.start()
+    await idle()
+    await app.stop()
 
-print("Bot started!")
-app.run()
+if __name__ == "__main__":
+    loop = asyncio.get_event_loop()
+    loop.create_task(web_server())
+    app.run()
