@@ -1,17 +1,20 @@
 import aiohttp
 import asyncio
+import os
 from bs4 import BeautifulSoup
+from PIL import Image
 
 from pyrogram import Client, filters
 from pyrogram.types import (
     InlineQuery, InlineQueryResultArticle,
-    InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton
+    InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton,
+    CallbackQuery
 )
 
-from config import APP_ID as API_ID, API_HASH, BOT_TOKEN
+from config import APP_ID, API_HASH, TG_BOT_TOKEN, START_MSG, START_PIC, OWNER_ID, LOGGER
 from database import db  # Import your MongoDB handler
 
-app = Client("inline_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("inline_bot", api_id=APP_ID, api_hash=API_HASH, bot_token=TG_BOT_TOKEN)
 
 
 async def search_nhentai(query=None, page=1):
@@ -59,11 +62,8 @@ async def inline_search(client: Client, inline_query: InlineQuery):
         raw_results = await search_nhentai(query, page)
         next_offset = str(page + 1) if len(raw_results) == 10 else ""
 
-        # Save bot header/footer config for user
         await db.set_bot(user_id, client.me.username)
         await db.set_header(user_id, f"🔍 You searched: {query}")
-
-        # Example of making footer dynamic: showing current page number
         footer_text = f"📄 Page {page} • 👨‍💻 @KGN_BOTZ"
         await db.set_footer(user_id, footer_text)
 
@@ -99,6 +99,101 @@ async def inline_search(client: Client, inline_query: InlineQuery):
     except Exception as e:
         print("[INLINE ERROR]", e)
         await inline_query.answer([], switch_pm_text="⚠️ Search failed", switch_pm_parameter="start")
+
+
+async def download_page(session, url, filename):
+    headers = {"User-Agent": "Mozilla/5.0"}
+    async with session.get(url, headers=headers) as resp:
+        if resp.status != 200:
+            raise Exception(f"Failed to download: {url}")
+        with open(filename, "wb") as f:
+            f.write(await resp.read())
+
+
+async def download_manga_as_pdf(code, progress_callback=None):
+    api_url = f"https://nhentai.net/api/gallery/{code}"
+    folder = f"nhentai_{code}"
+    os.makedirs(folder, exist_ok=True)
+
+    headers = {"User-Agent": "Mozilla/5.0"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(api_url, headers=headers) as resp:
+            if resp.status != 200:
+                raise Exception("Gallery not found.")
+            data = await resp.json()
+
+        num_pages = len(data["images"]["pages"])
+        ext_map = {"j": "jpg", "p": "png", "g": "gif", "w": "webp"}
+        media_id = data["media_id"]
+        image_paths = []
+
+        for i, page in enumerate(data["images"]["pages"], start=1):
+            ext = ext_map.get(page["t"], "jpg")
+            url = f"https://i.nhentai.net/galleries/{media_id}/{i}.{ext}"
+            path = os.path.join(folder, f"{i:03}.{ext}")
+            await download_page(session, url, path)
+            image_paths.append(path)
+            if progress_callback:
+                await progress_callback(i, num_pages, "Downloading")
+
+    pdf_path = f"{folder}.pdf"
+    first_img = Image.open(image_paths[0]).convert("RGB")
+    first_img.save(pdf_path, format="PDF", save_all=True, append_images=[
+        Image.open(p).convert("RGB") for p in image_paths[1:]
+    ])
+
+    for img in image_paths:
+        os.remove(img)
+    os.rmdir(folder)
+    return pdf_path
+
+
+@app.on_callback_query(filters.regex(r"^download_(\d+)$"))
+async def handle_download(client: Client, callback: CallbackQuery):
+    code = callback.matches[0].group(1)
+    pdf_path = None
+    msg = None
+
+    try:
+        chat_id = callback.message.chat.id if callback.message else callback.from_user.id
+
+        if callback.message:
+            msg = await callback.message.reply("📥 Starting download...")
+        else:
+            await callback.answer("📥 Starting download...")
+
+        async def progress(cur, total, stage):
+            percent = int((cur / total) * 100)
+            txt = f"{stage}... {percent}%"
+            try:
+                if msg:
+                    await msg.edit(txt)
+                else:
+                    await callback.edit_message_text(txt)
+            except:
+                pass
+
+        pdf_path = await download_manga_as_pdf(code, progress)
+
+        if msg:
+            await msg.edit("📤 Uploading PDF...")
+        else:
+            await callback.edit_message_text("📤 Uploading PDF...")
+
+        await client.send_document(chat_id, document=pdf_path, caption=f"📖 Manga: {code}")
+
+    except Exception as e:
+        err = f"❌ Error: {e}"
+        try:
+            if msg:
+                await msg.edit(err)
+            else:
+                await callback.edit_message_text(err)
+        except:
+            pass
+    finally:
+        if pdf_path and os.path.exists(pdf_path):
+            os.remove(pdf_path)
 
 
 print("Bot started!")
