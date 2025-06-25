@@ -20,7 +20,7 @@ DB_NAME = os.environ.get("DATABASE_NAME", "hmanga")
 
 TG_BOT_WORKERS = int(os.environ.get("TG_BOT_WORKERS", "200"))
 #--------------------------------------------
-START_PIC = os.environ.get("START_PIC", "https://telegra.ph/file/ec17880d61180d3312d6a.jpg")
+START_PIC = os.environ.get("START_PIC", "https://i.ibb.co/BVs6G2mp/5774913404891411876-1.jpg")
 
 #--------------------------------------------
 #--------------------------------------------
