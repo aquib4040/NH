@@ -19,13 +19,15 @@ app = Client("inline_bot", api_id=APP_ID, api_hash=API_HASH, bot_token=TG_BOT_TO
 
 routes = web.RouteTableDef()
 
-# Use hardcoded cookies from browser login to bypass CAPTCHA
-LOGIN_COOKIES = {
+# Static cookies to simulate a logged-in session on nhentai
+COOKIE_JAR = aiohttp.CookieJar()
+COOKIE_JAR.update_cookies({
     "cf_clearance": "2968378f2272707dac237fc5e1f12aaf",
     "csrftoken": "sGLJMZAnfdAXdoFR1vAaAsuKI9eYeBHe",
     "sessionid": "93lec8xbayt4zi82gykp11ibde30ovl4"
-}
-LOGIN_SESSION = aiohttp.ClientSession(cookies=LOGIN_COOKIES)
+})
+
+LOGIN_SESSION = None
 
 @routes.get("/", allow_head=True)
 async def root_handler(request):
@@ -162,17 +164,35 @@ async def notify_owner():
     except Exception as e:
         print("[NOTIFY_OWNER ERROR]", e)
 
+async def renew_cookies():
+    global LOGIN_SESSION
+    while True:
+        await asyncio.sleep(3600)  # Renew every hour
+        try:
+            COOKIE_JAR.clear()
+            COOKIE_JAR.update_cookies({
+                "cf_clearance": "2968378f2272707dac237fc5e1f12aaf",
+                "csrftoken": "sGLJMZAnfdAXdoFR1vAaAsuKI9eYeBHe",
+                "sessionid": "93lec8xbayt4zi82gykp11ibde30ovl4"
+            })
+            if LOGIN_SESSION:
+                await LOGIN_SESSION.close()
+            LOGIN_SESSION = aiohttp.ClientSession(cookie_jar=COOKIE_JAR)
+            print("🔄 Cookies renewed!")
+        except Exception as e:
+            print("[COOKIE RENEW ERROR]", e)
+
 async def main():
+    global LOGIN_SESSION
+    LOGIN_SESSION = aiohttp.ClientSession(cookie_jar=COOKIE_JAR)
     await app.start()
     print("✅ Bot Started!")
     await notify_owner()
-    await web_server()
-    await idle()
+    await asyncio.gather(web_server(), renew_cookies(), idle())
     await app.stop()
 
 if __name__ == "__main__":
     try:
-        loop = asyncio.get_event_loop()
-        loop.run_until_complete(main())
+        asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
         print("Bot stopped!")
