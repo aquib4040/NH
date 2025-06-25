@@ -48,7 +48,7 @@ async def start_command(client: Client, message: Message):
             id=message.from_user.id
         )
     except Exception:
-        caption = "<b>Hello, welcome to the bot.</b>"
+        caption = f"<b>Hello {message.from_user.mention}, welcome to the bot.</b>"
 
     await message.reply_photo(
         photo=start_pic,
