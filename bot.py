@@ -34,7 +34,7 @@ async def web_server():
 @app.on_message(filters.command("start") & filters.private)
 async def start_command(client: Client, message: Message):
     keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("🔎 Search Manga", switch_inline_query_current_chat="")],
+        [InlineKeyboardButton("🔎 Search Manga", switch_inline_query_current_chat="naruto")],
         [InlineKeyboardButton("💻 Contact Developer", url="https://t.me/rohit_1888")]
     ])
     start_pic = os.getenv("START_PIC") or "https://placehold.co/600x400"
