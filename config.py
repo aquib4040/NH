@@ -6,17 +6,17 @@ from logging.handlers import RotatingFileHandler
 #rohit_1888 on Tg
 #--------------------------------------------
 #Bot token @Botfather
-TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "7382577497:AAFYkBk57obfK5QxeT6KFus8IWgFtVawizc")
-APP_ID = int(os.environ.get("APP_ID", "22469064")) #Your API ID from my.telegram.org
-API_HASH = os.environ.get("API_HASH", "c05481978a217fdb11fa6774b15cba32") #Your API Hash from my.telegram.org
+TG_BOT_TOKEN = os.environ.get("TG_BOT_TOKEN", "7799059256:AAHcdiyHKxMSMp_uu22D2-gYGEsF3ehQkmg")
+APP_ID = int(os.environ.get("APP_ID", "20697474")) #Your API ID from my.telegram.org
+API_HASH = os.environ.get("API_HASH", "1acf41c146d578a57741ab0760208eb4") #Your API Hash from my.telegram.org
 #--------------------------------------------
 
-OWNER_ID = int(os.environ.get("OWNER_ID", "7328629001")) # Owner id
+OWNER_ID = int(os.environ.get("OWNER_ID", "5851158054")) # Owner id
 #--------------------------------------------
-PORT = os.environ.get("PORT", "8010")
+PORT = os.environ.get("PORT", "8080")
 #--------------------------------------------
-DB_URI = os.environ.get("DATABASE_URL", "mongodb+srv://YatoPro:ProYato@cluster0.zeaqrcy.mongodb.net/?retryWrites=true&w=majority")
-DB_NAME = os.environ.get("DATABASE_NAME", "Cluooo")
+DB_URI = os.environ.get("DATABASE_URL", "mongodb+srv://nar2db1:APMFkvM8w0LUk0R5@cluster0.9xfnq5n.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0")
+DB_NAME = os.environ.get("DATABASE_NAME", "hmanga")
 
 TG_BOT_WORKERS = int(os.environ.get("TG_BOT_WORKERS", "200"))
 #--------------------------------------------
