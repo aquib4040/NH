@@ -1,123 +1,61 @@
-import os
-import asyncio
-from pyrogram import Client, filters, idle
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
-import requests
-from bs4 import BeautifulSoup
-from config import API_HASH, TG_BOT_TOKEN, OWNER_ID, APP_ID as API_ID
-from database import db
+import logging
+import motor.motor_asyncio
+from config import DB_URI, DB_NAME
 
-bot = Client("hmanga_bot", api_id=API_ID, api_hash=API_HASH, bot_token=TG_BOT_TOKEN)
 
-# --- Helper Functions --- #
-def nhentai_search(query):
-    url = f"https://nhentai.net/search/?q={query}"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    res = requests.get(url, headers=headers)
-    soup = BeautifulSoup(res.text, "html.parser")
-    results = []
-    for gallery in soup.select(".gallery")[:5]:
-        code = gallery['href'].split("/")[2]
-        title = gallery.select_one(".caption").text.strip()
-        thumb = gallery.select_one("img")['data-src'].replace("t.nhentai.net", "i.nhentai.net").replace("/t.jpg", "/cover.jpg")
-        results.append((code, title, thumb))
-    return results
+class MongoHandler:
+    def __init__(self, uri, db_name):
+        self.client = motor.motor_asyncio.AsyncIOMotorClient(uri)
+        self.db = self.client[db_name]
+        self.users = self.db.users
+        self.history = self.db.history
 
-def generate_nhentai_buttons(results):
-    buttons = []
-    for code, title, _ in results:
-        buttons.append([
-            InlineKeyboardButton("📥 Read Online", url=f"https://nhentai.net/g/{code}"),
-            InlineKeyboardButton("📄 Download PDF", url=f"https://api.hentaidownloader.org/nhentai/pdf/{code}")
-        ])
-    return buttons
+    async def add_user(self, user_id):
+        try:
+            await self.users.update_one({"_id": user_id}, {"$setOnInsert": {"joined": True}}, upsert=True)
+        except Exception as e:
+            logging.error(f"Failed to add user {user_id}: {e}")
 
-# --- Command Handlers --- #
-@bot.on_message(filters.command("start") & filters.private)
-async def start_handler(_, message):
-    await message.reply(
-        "👋 Welcome to H-Manga Bot!\nSend a manga name and choose your source to search.",
-        reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("💬 Support", url="https://t.me/yourchannel")],
-            [InlineKeyboardButton("🔍 Search Examples", callback_data="help_examples")]
-        ])
-    )
+    async def get_total_users(self):
+        try:
+            return await self.users.count_documents({})
+        except Exception as e:
+            logging.error(f"Error fetching user count: {e}")
+            return 0
 
-@bot.on_message(filters.private & filters.text)
-async def search_handler(client, message):
-    query = message.text.strip()
-    if not query:
-        return await message.reply("❌ Please enter a valid search term.")
+    async def broadcast_message(self, bot, message):
+        total = 0
+        async for user in self.users.find({}, {"_id": 1}):
+            try:
+                await bot.copy_message(chat_id=user["_id"], from_chat_id=message.chat.id, message_id=message.id)
+                total += 1
+            except Exception as e:
+                logging.warning(f"Broadcast to {user['_id']} failed: {e}")
+        return total
 
-    await db.save_history(user_id=message.from_user.id, query=query)
+    async def save_history(self, user_id, query):
+        try:
+            await self.history.update_one(
+                {"_id": user_id},
+                {"$push": {"queries": {"$each": [query], "$slice": -10}}},
+                upsert=True
+            )
+        except Exception as e:
+            logging.error(f"Error saving history for {user_id}: {e}")
 
-    buttons = [
-        [
-            InlineKeyboardButton("🔴 NHentai", callback_data=f"src_nh_{query}"),
-            InlineKeyboardButton("🟠 HBrowse", callback_data=f"src_hb_{query}"),
-            InlineKeyboardButton("🔵 8Muses", callback_data=f"src_8m_{query}")
-        ]
-    ]
-    await message.reply(
-        f"🔍 You searched: <b>{query}</b>\nPlease select a site to fetch results from:",
-        reply_markup=InlineKeyboardMarkup(buttons),
-        parse_mode="html"
-    )
+    async def get_history(self, user_id):
+        user = await self.history.find_one({"_id": user_id})
+        return user.get("queries", []) if user else []
 
-@bot.on_callback_query()
-async def source_callback(client, callback_query):
-    data = callback_query.data
-    await callback_query.answer()
+    async def clear_history(self, user_id):
+        try:
+            result = await self.history.update_one({"_id": user_id}, {"$set": {"queries": []}})
+            return result.modified_count
+        except Exception as e:
+            logging.error(f"Error clearing history for {user_id}: {e}")
+            return 0
 
-    if data == "help_examples":
-        return await callback_query.message.edit_text("📘 Example Searches:\n- Naruto\n- One Piece\n- Overwatch\n\nType in PM to search.")
 
-    if not data.startswith("src_"):
-        return
+# Create instance
 
-    _, source, query = data.split("_", 2)
-
-    if source == "nh":
-        results = nhentai_search(query)
-        if results:
-            code, title, thumb = results[0]
-            buttons = generate_nhentai_buttons(results)
-            caption = f"<b>🔞 {title}</b>\n📖 <i>Code</i>: <code>{code}</code>\n\n🔗 https://nhentai.net/g/{code}"
-            await callback_query.message.reply_photo(photo=thumb, caption=caption, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="html")
-        else:
-            await callback_query.message.edit_text("❌ No results found for NHentai.")
-
-    elif source == "hb":
-        link = f"https://www.hbrowse.com/search?query={query}"
-        await callback_query.message.edit_text(f"📚 HBrowse results for: <b>{query}</b>\n🔗 {link}", parse_mode="html")
-
-    elif source == "8m":
-        link = f"https://comics.8muses.com/search?q={query}"
-        await callback_query.message.edit_text(f"📚 8Muses results for: <b>{query}</b>\n🔗 {link}", parse_mode="html")
-
-    else:
-        await callback_query.message.edit_text("❌ Unknown source selected.")
-
-# --- Notify Owner on Startup --- #
-async def notify_owner():
-    try:
-        await bot.send_message(OWNER_ID, "✅ Bot restarted and is now online.")
-    except Exception as e:
-        print(f"Failed to notify owner: {e}")
-
-# --- Main Run --- #
-async def main():
-    await bot.start()
-    await notify_owner()
-    print("🤖 Bot is running...")
-    await idle()
-
-if __name__ == "__main__":
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            asyncio.ensure_future(main())
-        else:
-            loop.run_until_complete(main())
-    except RuntimeError:
-        asyncio.run(main())
+db = MongoHandler(DB_URI, DB_NAME)
