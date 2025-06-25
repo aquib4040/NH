@@ -35,17 +35,24 @@ async def web_server():
 async def start_command(client: Client, message: Message):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔎 Search Manga", switch_inline_query_current_chat="")],
-        [InlineKeyboardButton("💻 Contact Developer", url="https://t.me/ExE_AQUIB")]
+        [InlineKeyboardButton("💻 Contact Developer", url="https://t.me/rohit_1888")]
     ])
-    await message.reply_photo(
-        photo=os.getenv("START_PIC"),
-        caption=os.getenv("START_MESSAGE").format(
+    start_pic = os.getenv("START_PIC") or "https://placehold.co/600x400"
+    start_msg = os.getenv("START_MESSAGE") or "<b>Hello {mention}, welcome to the bot.</b>"
+    try:
+        caption = start_msg.format(
             first=message.from_user.first_name,
             last=message.from_user.last_name,
             username=f"@{message.from_user.username}" if message.from_user.username else None,
             mention=message.from_user.mention,
             id=message.from_user.id
-        ),
+        )
+    except Exception:
+        caption = "<b>Hello, welcome to the bot.</b>"
+
+    await message.reply_photo(
+        photo=start_pic,
+        caption=caption,
         reply_markup=keyboard
     )
 
@@ -223,14 +230,20 @@ async def handle_download(client: Client, callback: CallbackQuery):
         if pdf_path and os.path.exists(pdf_path):
             os.remove(pdf_path)
 
+async def notify_owner():
+    try:
+        await app.send_message(OWNER_ID, "<b><i>🚀 Bot Restarted and Running!</i></b>")
+    except Exception as e:
+        print("[OWNER NOTIFY FAILED]", e)
+
 async def main():
     await web_server()
-    print("Bot started!")
     await app.start()
+    await notify_owner()
+    print("Bot started!")
     await idle()
     await app.stop()
 
 if __name__ == "__main__":
     loop = asyncio.get_event_loop()
-    loop.create_task(web_server())
-    app.run()
+    loop.run_until_complete(main())
