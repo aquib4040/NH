@@ -19,6 +19,10 @@ app = Client("inline_bot", api_id=APP_ID, api_hash=API_HASH, bot_token=TG_BOT_TO
 
 routes = web.RouteTableDef()
 
+NHENTAI_USERNAME = "aquib116"
+NHENTAI_PASSWORD = "Aquib#4154"
+LOGIN_SESSION = None
+
 @routes.get("/", allow_head=True)
 async def root_handler(request):
     return web.Response(text="✅ Bot is alive!")
@@ -63,6 +67,63 @@ async def start_command(client: Client, message: Message):
             reply_markup=keyboard
         )
 
+async def get_login_session():
+    global LOGIN_SESSION
+    if LOGIN_SESSION:
+        return LOGIN_SESSION
+
+    login_url = "https://nhentai.net/login/"
+    session = aiohttp.ClientSession()
+
+    async with session.get(login_url) as resp:
+        html = await resp.text()
+        soup = BeautifulSoup(html, "html.parser")
+        csrf_token = soup.find("input", {"name": "csrfmiddlewaretoken"})["value"]
+
+    payload = {
+        "csrfmiddlewaretoken": csrf_token,
+        "username_or_email": NHENTAI_USERNAME,
+        "password": NHENTAI_PASSWORD,
+        "next": "/"
+    }
+
+    headers = {"Referer": login_url}
+
+    async with session.post(login_url, data=payload, headers=headers) as login_resp:
+        if login_resp.status == 200:
+            LOGIN_SESSION = session
+            return session
+        else:
+            await session.close()
+            return None
+
+@app.on_callback_query(filters.regex("^getpdf_"))
+async def get_pdf(client: Client, callback_query: CallbackQuery):
+    code = callback_query.data.split("_", 1)[1]
+    pdf_url = f"https://nhentai.net/g/{code}/download/pdf"
+
+    await callback_query.answer("📥 Downloading PDF, please wait...")
+    try:
+        session = await get_login_session()
+        if session is None:
+            await callback_query.message.reply_text("❌ Login failed. Please check credentials.")
+            return
+
+        async with session.get(pdf_url) as resp:
+            if resp.status == 200:
+                file_bytes = await resp.read()
+                await client.send_document(
+                    chat_id=callback_query.from_user.id,
+                    document=file_bytes,
+                    file_name=f"nhentai_{code}.pdf",
+                    caption=f"📄 PDF of {code}"
+                )
+            else:
+                await callback_query.message.reply_text("❌ PDF not found or access denied.")
+    except Exception as e:
+        await callback_query.message.reply_text("❌ Error downloading PDF.")
+        print("[PDF DOWNLOAD ERROR]", e)
+
 @app.on_message(filters.private & filters.text & ~filters.command("start"))
 async def pm_search_handler(client: Client, message: Message):
     query = message.text.strip()
@@ -71,7 +132,7 @@ async def pm_search_handler(client: Client, message: Message):
     try:
         await db.set_bot(user_id, client.me.username)
         await db.set_header(user_id, f"🔍 You searched: {query}")
-        footer_text = f"📄 Results • 👨‍💻 @KGN_BOTZ"
+        footer_text = f"📄 Results • 👨‍💻 @{client.me.username}"
         await db.set_footer(user_id, footer_text)
 
         header = await db.get_header(user_id)
@@ -86,7 +147,8 @@ async def pm_search_handler(client: Client, message: Message):
             title = item["title"]
             code = item["code"]
             thumb = item["thumb"]
-            caption = f"{header}\n\n<b>{title}</b>\n🔗 <a href=\"https://nhentai.net/g/{code}/\">Read Now</a>\n\n<code>Code:</code> {code}\n\n{footer}"
+
+            caption = f"<b>🔥 {title}</b>\n\n{header}\n🆔 <b>Code:</b> <code>{code}</code>\n📖 <a href=\"https://nhentai.net/g/{code}/\">Read Online</a>\n\n{footer}"
 
             try:
                 await message.reply_photo(
@@ -94,8 +156,8 @@ async def pm_search_handler(client: Client, message: Message):
                     caption=caption,
                     reply_markup=InlineKeyboardMarkup([
                         [
-                            InlineKeyboardButton("📥 PDF", url=f"https://nhentai.to/g/{code}/download/pdf"),
-                            InlineKeyboardButton("🌐 Web", url=f"https://nhentai.net/g/{code}/")
+                            InlineKeyboardButton("📥 Download PDF", callback_data=f"getpdf_{code}"),
+                            InlineKeyboardButton("🌐 View Online", url=f"https://nhentai.net/g/{code}/")
                         ]
                     ])
                 )
