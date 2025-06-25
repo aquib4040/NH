@@ -80,10 +80,15 @@ async def source_callback(client, callback_query):
     if source == "nh":
         results = nhentai_search(query)
         if results:
-            code, title, thumb = results[0]
-            buttons = generate_nhentai_buttons(results)
-            caption = f"<b>🔞 {title}</b>\n📖 <i>Code</i>: <code>{code}</code>\n\n🔗 https://nhentai.net/g/{code}"
-            await callback_query.message.reply_photo(photo=thumb, caption=caption, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="html")
+            for code, title, thumb in results:
+                buttons = [
+                    [
+                        InlineKeyboardButton("📥 Read Online", url=f"https://nhentai.net/g/{code}"),
+                        InlineKeyboardButton("📄 Download PDF", url=f"https://api.hentaidownloader.org/nhentai/pdf/{code}")
+                    ]
+                ]
+                caption = f"<b>🔞 {title}</b>\n📖 <i>Code</i>: <code>{code}</code>\n\n🔗 https://nhentai.net/g/{code}"
+                await callback_query.message.reply_photo(photo=thumb, caption=caption, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="html")
         else:
             await callback_query.message.edit_text("❌ No results found for NHentai.")
 
