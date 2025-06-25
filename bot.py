@@ -102,6 +102,25 @@ async def pm_search_handler(client: Client, message: Message):
         print("[PM SEARCH ERROR]", e)
         await message.reply_text("⚠️ Something went wrong during search.")
 
+async def search_nhentai(query):
+    results = []
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"https://nhentai.net/search/?q={query}") as resp:
+                html = await resp.text()
+                soup = BeautifulSoup(html, "html.parser")
+                gallery = soup.find_all("div", class_="gallery")
+
+                for item in gallery:
+                    code = item.a['href'].split('/')[2]
+                    title = item.find("div", class_="caption").text.strip()
+                    thumb = item.img['data-src'] if item.img.has_attr('data-src') else item.img['src']
+                    thumb = thumb.replace("t.nhentai.net", "i.nhentai.net").replace("t.jpg", ".jpg")
+                    results.append({"code": code, "title": title, "thumb": thumb})
+    except Exception as e:
+        print("[SEARCH_NHENTAI ERROR]", e)
+    return results
+
 async def notify_owner():
     try:
         await app.send_message(OWNER_ID, "🚀 Bot Restarted and Running!")
