@@ -19,9 +19,13 @@ app = Client("inline_bot", api_id=APP_ID, api_hash=API_HASH, bot_token=TG_BOT_TO
 
 routes = web.RouteTableDef()
 
-NHENTAI_USERNAME = "aquib116"
-NHENTAI_PASSWORD = "Aquib#4154"
-LOGIN_SESSION = None
+# Use hardcoded cookies from browser login to bypass CAPTCHA
+LOGIN_COOKIES = {
+    "cf_clearance": "2968378f2272707dac237fc5e1f12aaf",
+    "csrftoken": "sGLJMZAnfdAXdoFR1vAaAsuKI9eYeBHe",
+    "sessionid": "93lec8xbayt4zi82gykp11ibde30ovl4"
+}
+LOGIN_SESSION = aiohttp.ClientSession(cookies=LOGIN_COOKIES)
 
 @routes.get("/", allow_head=True)
 async def root_handler(request):
@@ -67,36 +71,6 @@ async def start_command(client: Client, message: Message):
             reply_markup=keyboard
         )
 
-async def get_login_session():
-    global LOGIN_SESSION
-    if LOGIN_SESSION:
-        return LOGIN_SESSION
-
-    login_url = "https://nhentai.net/login/"
-    session = aiohttp.ClientSession()
-
-    async with session.get(login_url) as resp:
-        html = await resp.text()
-        soup = BeautifulSoup(html, "html.parser")
-        csrf_token = soup.find("input", {"name": "csrfmiddlewaretoken"})["value"]
-
-    payload = {
-        "csrfmiddlewaretoken": csrf_token,
-        "username_or_email": NHENTAI_USERNAME,
-        "password": NHENTAI_PASSWORD,
-        "next": "/"
-    }
-
-    headers = {"Referer": login_url}
-
-    async with session.post(login_url, data=payload, headers=headers) as login_resp:
-        if login_resp.status == 200:
-            LOGIN_SESSION = session
-            return session
-        else:
-            await session.close()
-            return None
-
 @app.on_callback_query(filters.regex("^getpdf_"))
 async def get_pdf(client: Client, callback_query: CallbackQuery):
     code = callback_query.data.split("_", 1)[1]
@@ -104,12 +78,7 @@ async def get_pdf(client: Client, callback_query: CallbackQuery):
 
     await callback_query.answer("📥 Downloading PDF, please wait...")
     try:
-        session = await get_login_session()
-        if session is None:
-            await callback_query.message.reply_text("❌ Login failed. Please check credentials.")
-            return
-
-        async with session.get(pdf_url) as resp:
+        async with LOGIN_SESSION.get(pdf_url) as resp:
             if resp.status == 200:
                 file_bytes = await resp.read()
                 await client.send_document(
