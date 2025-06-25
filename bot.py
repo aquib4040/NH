@@ -1,11 +1,11 @@
 import os
 import asyncio
-from pyrogram import Client, filters
+from pyrogram import Client, filters, idle
 from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
 import requests
 from bs4 import BeautifulSoup
 from config import API_HASH, TG_BOT_TOKEN, OWNER_ID, APP_ID as API_ID
-from database import db
+from db_handler import db
 
 bot = Client("hmanga_bot", api_id=API_ID, api_hash=API_HASH, bot_token=TG_BOT_TOKEN)
 
@@ -110,7 +110,10 @@ async def main():
     await bot.start()
     await notify_owner()
     print("🤖 Bot is running...")
-    await bot.run()
+    await idle()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        print(f"Runtime error: {e}")
