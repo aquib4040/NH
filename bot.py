@@ -8,7 +8,7 @@ from pyrogram.types import (
     InputTextMessageContent, InlineKeyboardMarkup, InlineKeyboardButton
 )
 
-from config import API_ID, API_HASH, BOT_TOKEN
+from config import APP_ID as API_ID, API_HASH, BOT_TOKEN
 from database import db  # Import your MongoDB handler
 
 app = Client("inline_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
