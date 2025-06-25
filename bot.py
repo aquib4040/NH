@@ -35,6 +35,7 @@ async def web_server():
 async def start_command(client: Client, message: Message):
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("🔎 Search Manga", switch_inline_query_current_chat="")],
+        [InlineKeyboardButton("📤 Deploy on Heroku", url="https://heroku.com/deploy")],
         [InlineKeyboardButton("💻 Contact Developer", url="https://t.me/rohit_1888")]
     ])
     start_pic = os.getenv("START_PIC") or "https://placehold.co/600x400"
@@ -92,7 +93,10 @@ async def pm_search_handler(client: Client, message: Message):
                     photo=thumb,
                     caption=caption,
                     reply_markup=InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📥 Download PDF", callback_data=f"download_{code}")]
+                        [
+                            InlineKeyboardButton("📥 PDF", url=f"https://nhentai.to/g/{code}/download/pdf"),
+                            InlineKeyboardButton("🌐 Web", url=f"https://nhentai.net/g/{code}/")
+                        ]
                     ])
                 )
             except:
@@ -136,4 +140,8 @@ async def main():
     await app.stop()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        loop = asyncio.get_event_loop()
+        loop.run_until_complete(main())
+    except (KeyboardInterrupt, SystemExit):
+        print("Bot stopped!")
