@@ -50,11 +50,17 @@ async def start_command(client: Client, message: Message):
     except Exception:
         caption = f"<b>Hello {message.from_user.mention}, welcome to the bot.</b>"
 
-    await message.reply_photo(
-        photo=start_pic,
-        caption=caption,
-        reply_markup=keyboard
-    )
+    try:
+        await message.reply_photo(
+            photo=start_pic,
+            caption=caption,
+            reply_markup=keyboard
+        )
+    except Exception:
+        await message.reply_text(
+            text=caption,
+            reply_markup=keyboard
+        )
 
 async def search_nhentai(query=None, page=1):
     results = []
