@@ -102,7 +102,19 @@ async def pm_search_handler(client: Client, message: Message):
         print("[PM SEARCH ERROR]", e)
         await message.reply_text("⚠️ Something went wrong during search.")
 
-# Leave the rest of your code unchanged below
-# It includes inline handler, PDF downloader, callback handler, notify_owner and main
+async def notify_owner():
+    try:
+        await app.send_message(OWNER_ID, "🚀 Bot Restarted and Running!")
+    except Exception as e:
+        print("[NOTIFY_OWNER ERROR]", e)
 
-# (Keep search_nhentai, inline_search, download_manga_as_pdf, handle_download, notify_owner, main as they are)
+async def main():
+    await app.start()
+    print("✅ Bot Started!")
+    await notify_owner()
+    await web_server()
+    await idle()
+    await app.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())
