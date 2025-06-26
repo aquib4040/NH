@@ -125,17 +125,17 @@ async def search_handler(client: Client, message: Message):
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-if __name__ == "__main__":
-    async def main():
-        await bot.start()
-        app = web.Application()
-        app.add_routes(routes)
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, "0.0.0.0", int(PORT))
-        await site.start()
-        logging.info("✅ Web server started")
-        await asyncio.Event().wait()  # Keeps it running
+from pyrogram.idle import idle
 
-    asyncio.run(main())
+async def main():
+    await bot.start()
+    app = web.Application()
+    app.add_routes(routes)
+    runner = web.AppRunner(app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", int(PORT))
+    await site.start()
+    logging.info("✅ Web server started")
+
+    await idle()  # instead of asyncio.Event().wait()
 
