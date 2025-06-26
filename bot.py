@@ -126,8 +126,16 @@ async def search_handler(client: Client, message: Message):
     )
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.create_task(bot.start())
-    app = web.Application()
-    app.add_routes(routes)
-    web.run_app(app, port=int(PORT))
+    async def main():
+        await bot.start()
+        app = web.Application()
+        app.add_routes(routes)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, "0.0.0.0", int(PORT))
+        await site.start()
+        logging.info("✅ Web server started")
+        await asyncio.Event().wait()  # Keeps it running
+
+    asyncio.run(main())
+
