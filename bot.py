@@ -19,6 +19,7 @@ bot = Client(
 
 @bot.on_message(filters.command("start") & filters.private)
 async def start_handler(client: Client, message: Message):
+    logging.info(f"/start received from {message.from_user.id}")
     await db.add_user(message.from_user.id)
     await message.reply_text(
         f"👋 Hello {message.from_user.mention}!\nWelcome to the H-Manga Bot.\nChoose a source or type your search directly:",
@@ -38,7 +39,8 @@ async def start_handler(client: Client, message: Message):
 async def callback_choose_source(client, callback_query):
     source = callback_query.data.split("_")[-1]
     await callback_query.message.edit_text(
-        f"✅ You selected {source.upper()} as your source. Now send me the manga name.")
+        f"✅ You selected {source.upper()} as your source. Now send me the manga name."
+    )
     await db.set_user_source(callback_query.from_user.id, source)
     await callback_query.answer()
 
@@ -125,4 +127,4 @@ async def main():
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    bot.run(main)
