@@ -3,11 +3,10 @@ import logging
 import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from config import TG_BOT_TOKEN, DB_URI, DB_NAME, OWNER_ID, API_ID, API_HASH, PORT
+from config import TG_BOT_TOKEN, DB_URI, DB_NAME, OWNER_ID, API_ID, API_HASH
 from db_handler import db
 from sources.nhentai import search_nhentai
 from sources.hbrowse import search_hbrowse
-from aiohttp import web
 
 logging.basicConfig(level=logging.INFO)
 
@@ -18,23 +17,15 @@ bot = Client(
     bot_token=TG_BOT_TOKEN
 )
 
-routes = web.RouteTableDef()
-
-@routes.get("/")
-async def home(request):
-    return web.Response(text="Bot is running")
-
 @bot.on_message(filters.command("start") & filters.private)
 async def start_handler(client: Client, message: Message):
     await db.add_user(message.from_user.id)
     await message.reply_text(
-        f"👋 Hello {message.from_user.mention}!\n\n" 
-        "Just send the name of a H-Manga and I'll fetch it for you.\n\n"
-        "You can also choose a source to search from below:",
+        f"👋 Hello {message.from_user.mention}!",
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("Search NHentai", callback_data="choose_src_nhentai"),
-                InlineKeyboardButton("Search HBrowse", callback_data="choose_src_hbrowse")
+                InlineKeyboardButton("🔍 Search NHentai", callback_data="choose_src_nhentai"),
+                InlineKeyboardButton("🔍 Search HBrowse", callback_data="choose_src_hbrowse")
             ],
             [
                 InlineKeyboardButton("📚 History", callback_data="history"),
@@ -55,7 +46,7 @@ async def callback_choose_source(client, callback_query):
 async def callback_help(client, callback_query):
     await callback_query.message.edit_text(
         "ℹ️ Just type the name of the H-Manga you want.\n"
-        "You can also tap a button to choose your preferred source before searching."
+        "Use the buttons on /start to select a source or view history."
     )
     await callback_query.answer()
 
@@ -125,17 +116,10 @@ async def search_handler(client: Client, message: Message):
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-from pyrogram.idle import idle
-
 async def main():
     await bot.start()
-    app = web.Application()
-    app.add_routes(routes)
-    runner = web.AppRunner(app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", int(PORT))
-    await site.start()
-    logging.info("✅ Web server started")
+    logging.info("✅ Bot Started with worker Procfile")
+    await asyncio.Event().wait()
 
-    await idle()  # instead of asyncio.Event().wait()
-
+if __name__ == "__main__":
+    asyncio.run(main())
