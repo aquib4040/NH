@@ -11,7 +11,7 @@ from sources.hbrowse import search_hbrowse
 logging.basicConfig(level=logging.INFO)
 
 bot = Client(
-    "hmanga-bot",
+    name="hmanga-bot",
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=TG_BOT_TOKEN
@@ -21,7 +21,7 @@ bot = Client(
 async def start_handler(client: Client, message: Message):
     await db.add_user(message.from_user.id)
     await message.reply_text(
-        f"👋 Hello {message.from_user.mention}!",
+        f"👋 Hello {message.from_user.mention}!\nWelcome to the H-Manga Bot.\nChoose a source or type your search directly:",
         reply_markup=InlineKeyboardMarkup([
             [
                 InlineKeyboardButton("🔍 Search NHentai", callback_data="choose_src_nhentai"),
@@ -45,8 +45,7 @@ async def callback_choose_source(client, callback_query):
 @bot.on_callback_query(filters.regex("^help"))
 async def callback_help(client, callback_query):
     await callback_query.message.edit_text(
-        "ℹ️ Just type the name of the H-Manga you want.\n"
-        "Use the buttons on /start to select a source or view history."
+        "ℹ️ Just type the name of the H-Manga you want.\nUse the buttons on /start to select a source or view history."
     )
     await callback_query.answer()
 
