@@ -1,15 +1,15 @@
 import os
 import logging
+import asyncio
 from pyrogram import Client, filters
 from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
-from config import TG_BOT_TOKEN, DB_URI, DB_NAME, OWNER_ID
+from config import TG_BOT_TOKEN, DB_URI, DB_NAME, OWNER_ID, API_ID, API_HASH, PORT
 from db_handler import db
 from sources.nhentai import search_nhentai
 from sources.hbrowse import search_hbrowse
+from aiohttp import web
 
 logging.basicConfig(level=logging.INFO)
-
-from config import API_ID, API_HASH  # Make sure these exist in config.py
 
 bot = Client(
     "hmanga-bot",
@@ -18,6 +18,11 @@ bot = Client(
     bot_token=TG_BOT_TOKEN
 )
 
+routes = web.RouteTableDef()
+
+@routes.get("/")
+async def home(request):
+    return web.Response(text="Bot is running")
 
 @bot.on_message(filters.command("start") & filters.private)
 async def start_handler(client: Client, message: Message):
@@ -121,4 +126,8 @@ async def search_handler(client: Client, message: Message):
     )
 
 if __name__ == "__main__":
-    bot.run()
+    loop = asyncio.get_event_loop()
+    loop.create_task(bot.start())
+    app = web.Application()
+    app.add_routes(routes)
+    web.run_app(app, port=int(PORT))
