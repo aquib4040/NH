@@ -9,7 +9,15 @@ from sources.hbrowse import search_hbrowse
 
 logging.basicConfig(level=logging.INFO)
 
-bot = Client("hmanga-bot", bot_token=TG_BOT_TOKEN)
+from config import API_ID, API_HASH  # Make sure these exist in config.py
+
+bot = Client(
+    "hmanga-bot",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=TG_BOT_TOKEN
+)
+
 
 @bot.on_message(filters.command("start") & filters.private)
 async def start_handler(client: Client, message: Message):
