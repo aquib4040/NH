@@ -17,78 +17,72 @@ bot = Client(
     bot_token=TG_BOT_TOKEN
 )
 
-# Start Command
 @bot.on_message(filters.command("start") & filters.private)
 async def start_handler(client: Client, message: Message):
     await db.add_user(message.from_user.id)
     await message.reply_text(
-        f"👋 Hello {message.from_user.mention}!\n\nWelcome to Hentai Manga Bot.\nChoose a source or send the name of a manga directly.",
+        f"👋 Hello {message.from_user.mention}!\nWelcome to the H-Manga Bot.\nChoose a source or type your search directly:",
         reply_markup=InlineKeyboardMarkup([
             [
-                InlineKeyboardButton("NHentai 🔞", callback_data="choose_src_nhentai"),
-                InlineKeyboardButton("HBrowse 📖", callback_data="choose_src_hbrowse")
+                InlineKeyboardButton("🔍 Search NHentai", callback_data="choose_src_nhentai"),
+                InlineKeyboardButton("🔍 Search HBrowse", callback_data="choose_src_hbrowse")
             ],
             [
-                InlineKeyboardButton("📚 My History", callback_data="history"),
+                InlineKeyboardButton("📚 History", callback_data="history"),
                 InlineKeyboardButton("❓ Help", callback_data="help")
             ]
         ])
     )
 
-# Help Command
-@bot.on_callback_query(filters.regex("^help"))
-async def callback_help(client, callback_query):
-    await callback_query.message.edit_text(
-        "💡 Send the name of the manga you'd like to search.\nYou can select a source using the /start menu.\nResults will include thumbnails and direct download links."
-    )
-    await callback_query.answer()
-
-# Select Source
 @bot.on_callback_query(filters.regex("^choose_src_"))
 async def callback_choose_source(client, callback_query):
     source = callback_query.data.split("_")[-1]
+    await callback_query.message.edit_text(
+        f"✅ You selected {source.upper()} as your source. Now send me the manga name.")
     await db.set_user_source(callback_query.from_user.id, source)
-    await callback_query.message.edit_text(f"✅ Source set to: {source.upper()}.\nNow send the manga name.")
     await callback_query.answer()
 
-# Search History
+@bot.on_callback_query(filters.regex("^help"))
+async def callback_help(client, callback_query):
+    await callback_query.message.edit_text(
+        "ℹ️ Just type the name of the H-Manga you want.\nUse the buttons on /start to select a source or view history."
+    )
+    await callback_query.answer()
+
 @bot.on_callback_query(filters.regex("^history"))
 async def callback_history(client, callback_query):
     history = await db.get_history(callback_query.from_user.id)
     if not history:
-        await callback_query.message.edit_text("📭 You haven't searched anything yet.")
+        await callback_query.message.edit_text("📭 No search history found.")
     else:
-        formatted = "\n".join(f"🔹 {item}" for item in history[-10:])
-        await callback_query.message.edit_text(f"📜 Your last searches:\n\n{formatted}")
+        formatted = "\n".join(f"🔹 {item}" for item in history)
+        await callback_query.message.edit_text(f"📜 Your recent searches:\n{formatted}")
     await callback_query.answer()
 
-# Admin Broadcast
 @bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
 async def broadcast_handler(client: Client, message: Message):
     if not message.reply_to_message:
-        return await message.reply("⚠️ Reply to a message you want to broadcast.")
+        return await message.reply("Please reply to a message to broadcast.")
     total = await db.broadcast_message(client, message.reply_to_message)
     await message.reply(f"✅ Broadcast sent to {total} users.")
 
-# Admin Stats
 @bot.on_message(filters.command("stats") & filters.user(OWNER_ID))
 async def stats_handler(client: Client, message: Message):
     count = await db.get_total_users()
     await message.reply(f"📊 Total users: {count}")
 
-# Main Manga Search
-@bot.on_message(filters.text & filters.private & ~filters.command(["start", "broadcast", "stats"]))
+@bot.on_message(filters.text & filters.private & ~filters.command(["start", "history", "broadcast", "stats"]))
 async def search_handler(client: Client, message: Message):
     query = message.text.strip()
     if not query:
         return
 
     await db.save_history(message.from_user.id, query)
-    source = await db.get_user_source(message.from_user.id)
+    user_source = await db.get_user_source(message.from_user.id)
 
     results = []
 
-    if source in ["nhentai", None]:
+    if user_source == "nhentai" or not user_source:
         nhentai_result = await search_nhentai(query)
         if nhentai_result:
             results.append({
@@ -97,7 +91,7 @@ async def search_handler(client: Client, message: Message):
                 "thumbnail": nhentai_result.get('thumbnail')
             })
 
-    if source in ["hbrowse", None]:
+    if user_source == "hbrowse" or not user_source:
         hbrowse_result = await search_hbrowse(query)
         if hbrowse_result:
             results.append({
@@ -113,18 +107,21 @@ async def search_handler(client: Client, message: Message):
         [InlineKeyboardButton(f"📥 Download from {r['title']}", url=r['url'])] for r in results
     ]
 
-    thumb = results[0].get('thumbnail') or "https://telegra.ph/file/ec17880d61180d3312d6a.jpg"
+    thumbnail = results[0]['thumbnail'] if results[0].get('thumbnail') else "https://telegra.ph/file/ec17880d61180d3312d6a.jpg"
 
     await message.reply_photo(
-        photo=thumb,
-        caption=f"🔎 Results for: <b>{query}</b>\nSelect a source below:",
+        photo=thumbnail,
+        caption=f"🔍 Results for: <b>{query}</b>\nChoose your source below:",
         reply_markup=InlineKeyboardMarkup(buttons)
     )
 
-# Worker-compatible async runner
 async def main():
     await bot.start()
     logging.info("✅ Bot Started with worker Procfile")
+    try:
+        await bot.send_message(OWNER_ID, "🚀 Bot has been deployed and is now running!")
+    except Exception as e:
+        logging.warning(f"Couldn't send startup message to owner: {e}")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
