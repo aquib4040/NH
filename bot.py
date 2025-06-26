@@ -1,124 +1,116 @@
 import os
-import asyncio
-from pyrogram import Client, filters, idle
-from pyrogram.types import InlineKeyboardMarkup, InlineKeyboardButton, InputMediaPhoto
-import requests
-from bs4 import BeautifulSoup
-from config import API_HASH, TG_BOT_TOKEN, OWNER_ID, APP_ID as API_ID
+import logging
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from config import TG_BOT_TOKEN, DB_URI, DB_NAME, OWNER_ID
 from db_handler import db
+from sources.nhentai import search_nhentai
+from sources.hbrowse import search_hbrowse
 
-bot = Client("hmanga_bot", api_id=API_ID, api_hash=API_HASH, bot_token=TG_BOT_TOKEN)
+logging.basicConfig(level=logging.INFO)
 
-# --- Helper Functions --- #
-def nhentai_search(query):
-    url = f"https://nhentai.net/search/?q={query}"
-    headers = {"User-Agent": "Mozilla/5.0"}
-    res = requests.get(url, headers=headers)
-    soup = BeautifulSoup(res.text, "html.parser")
-    results = []
-    for gallery in soup.select(".gallery")[:5]:
-        code = gallery['href'].split("/")[2]
-        title = gallery.select_one(".caption").text.strip()
-        thumb = gallery.select_one("img")['data-src'].replace("t.nhentai.net", "i.nhentai.net").replace("/t.jpg", "/cover.jpg")
-        results.append((code, title, thumb))
-    return results
+bot = Client("hmanga-bot", bot_token=TG_BOT_TOKEN)
 
-def generate_nhentai_buttons(results):
-    buttons = []
-    for code, title, _ in results:
-        buttons.append([
-            InlineKeyboardButton("📥 Read Online", url=f"https://nhentai.net/g/{code}"),
-            InlineKeyboardButton("📄 Download PDF", url=f"https://api.hentaidownloader.org/nhentai/pdf/{code}")
-        ])
-    return buttons
-
-# --- Command Handlers --- #
 @bot.on_message(filters.command("start") & filters.private)
-async def start_handler(_, message):
-    await message.reply(
-        "👋 Welcome to H-Manga Bot!\nSend a manga name and choose your source to search.",
+async def start_handler(client: Client, message: Message):
+    await db.add_user(message.from_user.id)
+    await message.reply_text(
+        f"👋 Hello {message.from_user.mention}!\n\n" 
+        "Just send the name of a H-Manga and I'll fetch it for you.\n\n"
+        "You can also choose a source to search from below:",
         reply_markup=InlineKeyboardMarkup([
-            [InlineKeyboardButton("💬 Support", url="https://t.me/yourchannel")],
-            [InlineKeyboardButton("🔍 Search Examples", callback_data="help_examples")]
+            [
+                InlineKeyboardButton("Search NHentai", callback_data="choose_src_nhentai"),
+                InlineKeyboardButton("Search HBrowse", callback_data="choose_src_hbrowse")
+            ],
+            [
+                InlineKeyboardButton("📚 History", callback_data="history"),
+                InlineKeyboardButton("❓ Help", callback_data="help")
+            ]
         ])
     )
 
-@bot.on_message(filters.private & filters.text)
-async def search_handler(client, message):
-    query = message.text.strip()
-    if not query:
-        return await message.reply("❌ Please enter a valid search term.")
-
-    await db.save_history(user_id=message.from_user.id, query=query)
-
-    buttons = [
-        [
-            InlineKeyboardButton("🔴 NHentai", callback_data=f"src_nh_{query}"),
-            InlineKeyboardButton("🟠 HBrowse", callback_data=f"src_hb_{query}"),
-            InlineKeyboardButton("🔵 8Muses", callback_data=f"src_8m_{query}")
-        ]
-    ]
-    await message.reply(
-        f"🔍 You searched: <b>{query}</b>\nPlease select a site to fetch results from:",
-        reply_markup=InlineKeyboardMarkup(buttons),
-        parse_mode="html"
-    )
-
-@bot.on_callback_query()
-async def source_callback(client, callback_query):
-    data = callback_query.data
+@bot.on_callback_query(filters.regex("^choose_src_"))
+async def callback_choose_source(client, callback_query):
+    source = callback_query.data.split("_")[-1]
+    await callback_query.message.edit_text(
+        f"✅ You selected {source.upper()} as your source. Now send me the manga name.")
+    await db.set_user_source(callback_query.from_user.id, source)
     await callback_query.answer()
 
-    if data == "help_examples":
-        return await callback_query.message.edit_text("📘 Example Searches:\n- Naruto\n- One Piece\n- Overwatch\n\nType in PM to search.")
+@bot.on_callback_query(filters.regex("^help"))
+async def callback_help(client, callback_query):
+    await callback_query.message.edit_text(
+        "ℹ️ Just type the name of the H-Manga you want.\n"
+        "You can also tap a button to choose your preferred source before searching."
+    )
+    await callback_query.answer()
 
-    if not data.startswith("src_"):
+@bot.on_callback_query(filters.regex("^history"))
+async def callback_history(client, callback_query):
+    history = await db.get_history(callback_query.from_user.id)
+    if not history:
+        await callback_query.message.edit_text("📭 No search history found.")
+    else:
+        formatted = "\n".join(f"🔹 {item}" for item in history)
+        await callback_query.message.edit_text(f"📜 Your recent searches:\n{formatted}")
+    await callback_query.answer()
+
+@bot.on_message(filters.command("broadcast") & filters.user(OWNER_ID))
+async def broadcast_handler(client: Client, message: Message):
+    if not message.reply_to_message:
+        return await message.reply("Please reply to a message to broadcast.")
+    total = await db.broadcast_message(client, message.reply_to_message)
+    await message.reply(f"✅ Broadcast sent to {total} users.")
+
+@bot.on_message(filters.command("stats") & filters.user(OWNER_ID))
+async def stats_handler(client: Client, message: Message):
+    count = await db.get_total_users()
+    await message.reply(f"📊 Total users: {count}")
+
+@bot.on_message(filters.text & filters.private & ~filters.command(["start", "history", "broadcast", "stats"]))
+async def search_handler(client: Client, message: Message):
+    query = message.text.strip()
+    if not query:
         return
 
-    _, source, query = data.split("_", 2)
+    await db.save_history(message.from_user.id, query)
+    user_source = await db.get_user_source(message.from_user.id)
 
-    if source == "nh":
-        results = nhentai_search(query)
-        if results:
-            for code, title, thumb in results:
-                buttons = [
-                    [
-                        InlineKeyboardButton("📥 Read Online", url=f"https://nhentai.net/g/{code}"),
-                        InlineKeyboardButton("📄 Download PDF", url=f"https://api.hentaidownloader.org/nhentai/pdf/{code}")
-                    ]
-                ]
-                caption = f"<b>🔞 {title}</b>\n📖 <i>Code</i>: <code>{code}</code>\n\n🔗 https://nhentai.net/g/{code}"
-                await callback_query.message.reply_photo(photo=thumb, caption=caption, reply_markup=InlineKeyboardMarkup(buttons), parse_mode="html")
-        else:
-            await callback_query.message.edit_text("❌ No results found for NHentai.")
+    results = []
 
-    elif source == "hb":
-        link = f"https://www.hbrowse.com/search?query={query}"
-        await callback_query.message.edit_text(f"📚 HBrowse results for: <b>{query}</b>\n🔗 {link}", parse_mode="html")
+    if user_source == "nhentai" or not user_source:
+        nhentai_result = await search_nhentai(query)
+        if nhentai_result:
+            results.append({
+                "title": "NHentai",
+                "url": nhentai_result['pdf_url'],
+                "thumbnail": nhentai_result.get('thumbnail')
+            })
 
-    elif source == "8m":
-        link = f"https://comics.8muses.com/search?q={query}"
-        await callback_query.message.edit_text(f"📚 8Muses results for: <b>{query}</b>\n🔗 {link}", parse_mode="html")
+    if user_source == "hbrowse" or not user_source:
+        hbrowse_result = await search_hbrowse(query)
+        if hbrowse_result:
+            results.append({
+                "title": "HBrowse",
+                "url": hbrowse_result['pdf_url'],
+                "thumbnail": hbrowse_result.get('thumbnail')
+            })
 
-    else:
-        await callback_query.message.edit_text("❌ Unknown source selected.")
+    if not results:
+        return await message.reply("❌ No results found on any source.")
 
-# --- Notify Owner on Startup --- #
-async def notify_owner():
-    try:
-        await bot.send_message(OWNER_ID, "✅ Bot restarted and is now online.")
-    except Exception as e:
-        print(f"Failed to notify owner: {e}")
+    buttons = [
+        [InlineKeyboardButton(f"📥 Download from {r['title']}", url=r['url'])] for r in results
+    ]
 
-# --- Main Run --- #
-async def main():
-    await bot.start()
-    await notify_owner()
-    print("🤖 Bot is running...")
-    await idle()
+    thumbnail = results[0]['thumbnail'] if results[0].get('thumbnail') else "https://telegra.ph/file/ec17880d61180d3312d6a.jpg"
+
+    await message.reply_photo(
+        photo=thumbnail,
+        caption=f"🔍 Results for: <b>{query}</b>\nChoose your source below:",
+        reply_markup=InlineKeyboardMarkup(buttons)
+    )
 
 if __name__ == "__main__":
-    try:
-        asyncio.run(main())
-    except RuntimeError as e:
-        print(f"Runtime error: {e}")
+    bot.run()
